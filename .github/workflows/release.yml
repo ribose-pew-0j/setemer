@@ -22,6 +22,11 @@ jobs:
           cd build
           ditto -c -k --keepParent "Сетеметр.app" Setemeter.zip
           shasum -a 256 Setemeter.zip > Setemeter.zip.sha256
+          # DMG для ручной установки: приложение + ярлык на /Applications
+          rm -rf dmg && mkdir dmg
+          ditto "Сетеметр.app" "dmg/Сетеметр.app"
+          ln -s /Applications dmg/Applications
+          hdiutil create -volname "Сетеметр" -srcfolder dmg -ov -format UDZO Setemeter.dmg
 
       - name: Create GitHub release
         env:
@@ -29,6 +34,6 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           gh release create "$TAG" \
-            build/Setemeter.zip build/Setemeter.zip.sha256 \
+            build/Setemeter.dmg build/Setemeter.zip build/Setemeter.zip.sha256 \
             --title "Сетеметр $TAG" \
             --generate-notes
