@@ -1,7 +1,5 @@
 import SwiftUI
 
-/// Дашборд меню-панели (380 pt, высота ≤ 520 pt): шапка с пингом, график задержки,
-/// сетка метрик (скорость, джиттер, потери, Wi‑Fi, IP) и нижняя панель. Разделители вместо карточек.
 @MainActor
 struct DashboardView: View {
     @ObservedObject var monitor: Monitor
@@ -34,34 +32,37 @@ struct DashboardView: View {
         let tone = sampleTone(monitor.latest, threshold: settings.slowPingThresholdMs)
         let points = HistoryStore.shared.points(for: range)
         let stats = HistoryStore.shared.stats(for: range)
-        return VStack(alignment: .leading, spacing: 10) {
+        return VStack(alignment: .leading, spacing: 12) {
             header(theme: theme, tone: tone)
-            hairline
             chartSection(theme: theme, points: points, stats: stats)
-            hairline
+                .padding(12)
+                .groupSurface(theme)
+            speedSection(theme: theme)
+                .padding(12)
+                .groupSurface(theme)
             metricsSection(theme: theme)
-            hairline
+                .padding(.horizontal, 8)
+            Divider()
             footer(theme: theme)
         }
         .padding(Spacing.window)
-        .frame(width: 380)
+        .frame(width: 400)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Radius.window, style: .continuous))
-    }
-
-    private var hairline: some View {
-        Divider().opacity(0.6)
     }
 
     // MARK: Шапка
 
     private func header(theme: Theme, tone: Tone) -> some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(spacing: 10) {
+            Image(systemName: networkSymbol)
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(theme.color(tone))
+                .frame(width: 38, height: 38)
+                .background(theme.color(tone).opacity(0.10), in: Circle())
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 7) {
-                    StatusDot(tone: tone, theme: theme)
-                    Text(status(monitor.latest))
-                        .font(Typo.value)
-                }
+                Text(status(monitor.latest))
+                    .font(.system(size: 16, weight: .semibold))
                 networkLine(theme: theme)
             }
             Spacer(minLength: 0)
@@ -86,11 +87,9 @@ struct DashboardView: View {
 
     private func networkLine(theme: Theme) -> some View {
         HStack(spacing: 5) {
-            Image(systemName: networkSymbol)
-                .font(.system(size: 10, weight: .regular))
             Text(diagnostics.networkType ?? "Определяем сеть…")
                 .lineLimit(1)
-            if let rssi = diagnostics.wifiRSSI {
+            if networkSymbol == "wifi", let rssi = diagnostics.wifiRSSI {
                 let bars = signalBarCount(rssi)
                 SignalBars(bars: bars, tone: signalTone(bars: bars), theme: theme)
             }
@@ -105,8 +104,7 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Text("Задержка")
-                    .font(Typo.caption)
-                    .foregroundStyle(.secondary)
+                    .font(Typo.value)
                 Spacer(minLength: 8)
                 Picker("Период", selection: $range) {
                     ForEach(HistoryRange.allCases, id: \.self) { item in
@@ -114,6 +112,7 @@ struct DashboardView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+                .controlSize(.small)
                 .labelsHidden()
                 .fixedSize()
             }
@@ -121,11 +120,10 @@ struct DashboardView: View {
                          threshold: settings.slowPingThresholdMs)
                 .id(range)
                 .transition(.opacity)
-            HStack(alignment: .top, spacing: 18) {
+            HStack(alignment: .top, spacing: 8) {
                 statItem("Медиана", msText(stats.medianMs))
                 statItem("p95", msText(stats.p95Ms))
                 statItem("Доступность", percentText(stats.uptimePercent))
-                Spacer(minLength: 0)
             }
         }
         .animation(Motion.animation, value: range)
@@ -138,26 +136,42 @@ struct DashboardView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             Text(value)
-                .font(Typo.body)
+                .font(Typo.value)
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: Скорость и метрики
 
-    /// Скорость и метрики одной сеткой 2 × 3. Замер скорости запускается иконкой в нижней панели.
-    private func metricsSection(theme: Theme) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+    private func speedSection(theme: Theme) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack {
+                Text("Скорость")
+                    .font(Typo.value)
+                Text(speedCaption)
+                    .font(Typo.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button(action: diagnostics.testSpeed) {
+                    Label("Измерить", systemImage: "bolt.fill")
+                }
+                .controlSize(.small)
+                .disabled(diagnostics.speedBusy)
+            }
             HStack(alignment: .top, spacing: 16) {
                 MetricTile(title: "Скачивание", symbol: "arrow.down", value: diagnostics.formattedSpeed,
-                           unit: diagnostics.speedUnitTitle, details: [speedCaption],
-                           theme: theme, tone: downloadTone)
+                           unit: diagnostics.speedUnitTitle, theme: theme, tone: downloadTone, prominent: true)
                 MetricTile(title: "Отдача", symbol: "arrow.up", value: diagnostics.formattedUpload,
-                           unit: diagnostics.speedUnitTitle, details: [speedCaption],
-                           theme: theme, tone: uploadTone)
+                           unit: diagnostics.speedUnitTitle, theme: theme, tone: uploadTone, prominent: true)
             }
+        }
+    }
+
+    private func metricsSection(theme: Theme) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 16) {
                 MetricTile(title: "Джиттер", symbol: "waveform", value: jitterText, unit: "мс",
                            details: [jitterCaption], theme: theme, tone: jitterLevel)
@@ -257,8 +271,6 @@ struct DashboardView: View {
 
     private func footer(theme: Theme) -> some View {
         HStack(spacing: 2) {
-            FooterIcon(symbol: diagnostics.speedBusy ? "arrow.clockwise" : "bolt",
-                       title: "Измерить скорость", theme: theme, action: diagnostics.testSpeed)
             FooterIcon(symbol: "network", title: "Диагностика", theme: theme, action: diagnose)
             FooterIcon(symbol: "gearshape", title: "Настройки", theme: theme, action: openSettings)
             FooterIcon(symbol: "square.and.arrow.up", title: "Экспорт истории в CSV", theme: theme,

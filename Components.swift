@@ -243,6 +243,7 @@ struct MetricTile: View {
     var tone: Tone = .neutral
     var signalBars: Int? = nil
     var copyValue: String? = nil
+    var prominent = false
     @State var copied = false
 
     var body: some View {
@@ -263,7 +264,7 @@ struct MetricTile: View {
             .foregroundStyle(.secondary)
             HStack(alignment: .firstTextBaseline, spacing: 3) {
                 Text(value ?? "—")
-                    .font(Typo.value)
+                    .font(.system(size: prominent ? 22 : 15, weight: .semibold))
                     .monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
@@ -299,7 +300,7 @@ struct MetricTile: View {
 
     private var valueColor: Color {
         if value == nil { return Color(nsColor: .tertiaryLabelColor) }
-        return tone == .neutral ? Color(nsColor: .labelColor) : theme.color(tone)
+        return tone == .warning || tone == .bad ? theme.color(tone) : .primary
     }
 
     func copy() {

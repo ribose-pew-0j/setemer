@@ -7,9 +7,10 @@ struct LatencyScale {
     let low: Double
     let high: Double
 
-    init(range: HistoryRange, now: Date, values: [Double]) {
-        start = now.addingTimeInterval(-range.interval)
-        interval = range.interval
+    init(range: HistoryRange, now: Date, firstSample: Date?, values: [Double]) {
+        let windowStart = now.addingTimeInterval(-range.interval)
+        start = max(windowStart, min(firstSample ?? windowStart, now.addingTimeInterval(-60)))
+        interval = now.timeIntervalSince(start)
         let minimum = values.min() ?? 0
         let maximum = values.max() ?? 100
         let span = max(maximum - minimum, 20)
@@ -80,6 +81,11 @@ func drawLatency(_ context: inout GraphicsContext, size: CGSize, layout: Latency
     }
     for line in layout.lines {
         guard let first = line.first, let last = line.last else { continue }
+        if line.count == 1 {
+            context.fill(Path(ellipseIn: CGRect(x: first.x - 2, y: first.y - 2, width: 4, height: 4)),
+                         with: .color(theme.mint))
+            continue
+        }
         var path = Path()
         path.move(to: first)
         for point in line.dropFirst() {
@@ -90,7 +96,7 @@ func drawLatency(_ context: inout GraphicsContext, size: CGSize, layout: Latency
         area.addLine(to: CGPoint(x: first.x, y: size.height))
         area.closeSubpath()
         let fill = GraphicsContext.Shading.linearGradient(
-            Gradient(colors: [theme.mint.opacity(0.12), theme.mint.opacity(0)]),
+            Gradient(colors: [theme.mint.opacity(0.20), theme.mint.opacity(0)]),
             startPoint: .zero,
             endPoint: CGPoint(x: 0, y: size.height))
         context.fill(area, with: fill)
@@ -130,7 +136,7 @@ struct LatencyChart: View {
     }
 
     var body: some View {
-        let scale = LatencyScale(range: range, now: .now, values: values)
+        let scale = LatencyScale(range: range, now: .now, firstSample: points.first?.date, values: values)
         return VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top, spacing: 6) {
                 axis(scale: scale)
@@ -163,6 +169,12 @@ struct LatencyChart: View {
             Canvas { context, canvasSize in
                 drawLatency(&context, size: canvasSize, layout: layout, guideYs: guideYs,
                             medianY: medianY, theme: theme)
+            }
+            if points.isEmpty {
+                Text("Пока нет замеров")
+                    .font(Typo.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             Color.clear
                 .contentShape(Rectangle())
@@ -236,7 +248,7 @@ struct LatencyChart: View {
             if showMedian {
                 tick(stats.medianMs, y: yMedian)
             }
-            tick(values.min(), y: yMin)
+            if isApart(yMin, yMax) { tick(values.min(), y: yMin) }
         }
         .frame(width: axisWidth, height: plotHeight, alignment: .topLeading)
         .clipped()
