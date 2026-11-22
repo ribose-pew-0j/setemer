@@ -61,22 +61,22 @@ func latencyLayout(points: [HistoryPoint], scale: LatencyScale, width: CGFloat, 
     return LatencyLayout(lines: lines, failures: failures)
 }
 
-/// Рисование сетки, медианы, заливки, линии и провалов.
+/// Рисование направляющих, медианы, заливки, линии и провалов.
+/// Направляющих всего две: на уровне максимума и минимума, там же стоят подписи оси.
 func drawLatency(_ context: inout GraphicsContext, size: CGSize, layout: LatencyLayout,
-                 medianY: CGFloat?, theme: Theme) {
-    for fraction in [0.0, 0.5, 1.0] {
-        var grid = Path()
-        let y = (size.height - 1) * CGFloat(fraction) + 0.5
-        grid.move(to: CGPoint(x: 0, y: y))
-        grid.addLine(to: CGPoint(x: size.width, y: y))
-        context.stroke(grid, with: .color(theme.grid), lineWidth: 1)
+                 guideYs: [CGFloat], medianY: CGFloat?, theme: Theme) {
+    for y in guideYs {
+        var guide = Path()
+        guide.move(to: CGPoint(x: 0, y: y))
+        guide.addLine(to: CGPoint(x: size.width, y: y))
+        context.stroke(guide, with: .color(theme.grid), lineWidth: 0.5)
     }
     if let medianY {
         var median = Path()
         median.move(to: CGPoint(x: 0, y: medianY))
         median.addLine(to: CGPoint(x: size.width, y: medianY))
-        context.stroke(median, with: .color(Color.secondary.opacity(0.7)),
-                       style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+        context.stroke(median, with: .color(Color(nsColor: .tertiaryLabelColor)),
+                       style: StrokeStyle(lineWidth: 0.5, dash: [2, 3]))
     }
     for line in layout.lines {
         guard let first = line.first, let last = line.last else { continue }
@@ -90,21 +90,22 @@ func drawLatency(_ context: inout GraphicsContext, size: CGSize, layout: Latency
         area.addLine(to: CGPoint(x: first.x, y: size.height))
         area.closeSubpath()
         let fill = GraphicsContext.Shading.linearGradient(
-            Gradient(colors: [theme.mint.opacity(0.30), theme.mint.opacity(0)]),
+            Gradient(colors: [theme.mint.opacity(0.12), theme.mint.opacity(0)]),
             startPoint: .zero,
             endPoint: CGPoint(x: 0, y: size.height))
         context.fill(area, with: fill)
         context.stroke(path, with: .color(theme.mint),
-                       style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
+                       style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
     }
     for failure in layout.failures {
-        let dot = Path(ellipseIn: CGRect(x: failure.x - 2.5, y: failure.y - 2.5, width: 5, height: 5))
+        let dot = Path(ellipseIn: CGRect(x: failure.x - 2, y: failure.y - 2, width: 4, height: 4))
         context.fill(dot, with: .color(theme.coral))
     }
 }
 
-/// График задержки за выбранный период: линия с градиентной заливкой, сетка, подписи min/median/max,
-/// провалы («нет ответа») коралловыми точками, подсказка при наведении или протягивании.
+/// График задержки за выбранный период: тонкая линия с лёгкой заливкой, две направляющие,
+/// подписи max/median/min на оси (строго внутри области графика), провалы коралловыми точками,
+/// подсказка при наведении или протягивании.
 struct LatencyChart: View {
     let points: [HistoryPoint]
     let range: HistoryRange
@@ -113,8 +114,9 @@ struct LatencyChart: View {
     let threshold: Int
     @State var hover: CGPoint? = nil
 
-    let axisWidth: CGFloat = 36
-    let plotHeight: CGFloat = 128
+    let axisWidth: CGFloat = 30
+    let plotHeight: CGFloat = 72
+    let labelHeight: CGFloat = 12
 
     private var values: [Double] {
         points.compactMap { $0.ms }
@@ -129,8 +131,8 @@ struct LatencyChart: View {
 
     var body: some View {
         let scale = LatencyScale(range: range, now: .now, values: values)
-        return VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .top, spacing: 0) {
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top, spacing: 6) {
                 axis(scale: scale)
                 GeometryReader { proxy in
                     plot(size: proxy.size, scale: scale)
@@ -144,7 +146,7 @@ struct LatencyChart: View {
             }
             .font(Typo.caption)
             .foregroundStyle(.secondary)
-            .padding(.leading, axisWidth)
+            .padding(.leading, axisWidth + 6)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("График задержки")
@@ -154,9 +156,13 @@ struct LatencyChart: View {
     private func plot(size: CGSize, scale: LatencyScale) -> some View {
         let layout = latencyLayout(points: points, scale: scale, width: size.width, height: size.height)
         let medianY: CGFloat? = stats.medianMs.map { scale.y($0, height: size.height) }
+        let guideYs: [CGFloat] = [values.max(), values.min()]
+            .compactMap { $0 }
+            .map { scale.y($0, height: size.height) }
         return ZStack(alignment: .topLeading) {
             Canvas { context, canvasSize in
-                drawLatency(&context, size: canvasSize, layout: layout, medianY: medianY, theme: theme)
+                drawLatency(&context, size: canvasSize, layout: layout, guideYs: guideYs,
+                            medianY: medianY, theme: theme)
             }
             Color.clear
                 .contentShape(Rectangle())
@@ -187,28 +193,30 @@ struct LatencyChart: View {
         let markerColor: Color = point.ms.map { theme.color(pingTone(Int($0.rounded()), threshold: threshold)) }
             ?? theme.coral
         let title = point.ms.map { "\(Int($0.rounded())) мс" } ?? "Нет ответа"
-        let tipX = min(max(x, 64), size.width - 64)
+        let tipX = min(max(x, 56), size.width - 56)
         return ZStack(alignment: .topLeading) {
             Rectangle()
                 .fill(theme.grid)
-                .frame(width: 1, height: size.height)
+                .frame(width: 0.5, height: size.height)
                 .position(x: x, y: size.height / 2)
             Circle()
                 .fill(markerColor)
-                .frame(width: 8, height: 8)
+                .frame(width: 6, height: 6)
                 .position(x: x, y: y)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
-                    .font(Typo.display(12))
+                    .font(Typo.value)
+                    .monospacedDigit()
                     .foregroundStyle(markerColor)
                 Text(timeText(point.date))
                     .font(Typo.caption)
                     .foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 7)
+            .padding(.horizontal, 6)
             .padding(.vertical, 4)
             .background {
-                RoundedRectangle(cornerRadius: 7, style: .continuous).fill(theme.tooltip)
+                RoundedRectangle(cornerRadius: Radius.control, style: .continuous)
+                    .fill(.regularMaterial)
             }
             .position(x: tipX, y: 18)
         }
@@ -216,6 +224,8 @@ struct LatencyChart: View {
         .allowsHitTesting(false)
     }
 
+    /// Подписи оси: max, median (если не слипается с краями), min.
+    /// Каждая подпись центрируется по своей точке, но зажата внутри области графика и обрезается по её высоте.
     private func axis(scale: LatencyScale) -> some View {
         let yMax = values.max().map { scale.y($0, height: plotHeight) }
         let yMin = values.min().map { scale.y($0, height: plotHeight) }
@@ -228,23 +238,26 @@ struct LatencyChart: View {
             }
             tick(values.min(), y: yMin)
         }
-        .frame(width: axisWidth, height: plotHeight)
+        .frame(width: axisWidth, height: plotHeight, alignment: .topLeading)
+        .clipped()
     }
 
     private func tick(_ value: Double?, y: CGFloat?) -> some View {
-        let position = min(max(y ?? 0, 6), plotHeight - 6)
+        let half = labelHeight / 2
+        let center = min(max(y ?? half, half), plotHeight - half)
         return Text(value.map { "\(Int($0.rounded()))" } ?? "")
             .font(Typo.caption)
             .monospacedDigit()
             .foregroundStyle(.secondary)
-            .frame(width: axisWidth - 6, alignment: .trailing)
-            .offset(y: position - 6)
+            .lineLimit(1)
+            .frame(width: axisWidth, height: labelHeight, alignment: .trailing)
+            .offset(y: center - half)
     }
 
     /// Подпись медианы скрываем, если она слишком близко к min или max.
     private func isApart(_ a: CGFloat?, _ b: CGFloat?) -> Bool {
         guard let a, let b else { return true }
-        return abs(a - b) > 12
+        return abs(a - b) > labelHeight + 2
     }
 
     private func nearestPoint(to date: Date) -> HistoryPoint? {

@@ -15,50 +15,57 @@ extension HistoryRange {
     }
 }
 
-/// Поверхность карточки: фон, тонкая обводка, скругление.
-struct CardSurface: ViewModifier {
+/// Фон группы в стиле inset-списка: заливка без обводки и тени.
+struct GroupSurface: ViewModifier {
     let theme: Theme
-    var radius: CGFloat = Radius.card
 
     func body(content: Content) -> some View {
-        content
-            .background {
-                RoundedRectangle(cornerRadius: radius, style: .continuous).fill(theme.card)
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .strokeBorder(theme.cardStroke, lineWidth: 1)
-                    .allowsHitTesting(false)
-            }
+        content.background {
+            RoundedRectangle(cornerRadius: Radius.group, style: .continuous)
+                .fill(theme.group)
+        }
     }
 }
 
 extension View {
-    func cardSurface(_ theme: Theme, radius: CGFloat = Radius.card) -> some View {
-        modifier(CardSurface(theme: theme, radius: radius))
+    func groupSurface(_ theme: Theme) -> some View {
+        modifier(GroupSurface(theme: theme))
     }
 }
 
-/// Точка статуса со мягким свечением. Цвет плавно меняется при смене состояния.
+/// Подсветка фона при наведении для плоских кнопок.
+struct HoverHighlight: ViewModifier {
+    let theme: Theme
+    @State var hovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .background {
+                RoundedRectangle(cornerRadius: Radius.control, style: .continuous)
+                    .fill(hovering ? theme.hover : Color.clear)
+            }
+            .onHover { hovering = $0 }
+    }
+}
+
+extension View {
+    func hoverHighlight(_ theme: Theme) -> some View {
+        modifier(HoverHighlight(theme: theme))
+    }
+}
+
+/// Точка статуса. Цвет плавно меняется при смене состояния.
 struct StatusDot: View {
     let tone: Tone
     let theme: Theme
-    var size: CGFloat = 10
+    var size: CGFloat = 8
 
     var body: some View {
-        let color = theme.color(tone)
-        return ZStack {
-            Circle()
-                .fill(color.opacity(0.45))
-                .frame(width: size * 2, height: size * 2)
-                .blur(radius: size * 0.5)
-            Circle()
-                .fill(color)
-                .frame(width: size, height: size)
-        }
-        .frame(width: size * 2, height: size * 2)
-        .animation(Motion.animation, value: tone)
-        .accessibilityHidden(true)
+        Circle()
+            .fill(theme.color(tone))
+            .frame(width: size, height: size)
+            .animation(Motion.animation, value: tone)
+            .accessibilityHidden(true)
     }
 }
 
@@ -90,7 +97,7 @@ func sparklineLayout(samples: [Sample], slots: Int, size: CGSize, top: Double) -
     return SparkLayout(segments: segments, failures: failures)
 }
 
-/// Мини-спарклайн последних проверок: линия с заливкой, провалы коралловыми точками.
+/// Мини-спарклайн последних проверок: тонкая линия 1.5 pt с лёгкой заливкой, провалы коралловыми точками.
 struct Sparkline: View {
     let samples: [Sample]
     let tone: Tone
@@ -115,7 +122,7 @@ struct Sparkline: View {
                 area.addLine(to: CGPoint(x: first.x, y: size.height))
                 area.closeSubpath()
                 let fill = GraphicsContext.Shading.linearGradient(
-                    Gradient(colors: [accent.opacity(0.28), accent.opacity(0)]),
+                    Gradient(colors: [accent.opacity(0.12), accent.opacity(0)]),
                     startPoint: .zero,
                     endPoint: CGPoint(x: 0, y: size.height))
                 context.fill(area, with: fill)
@@ -124,11 +131,11 @@ struct Sparkline: View {
             }
             let baseline = size.height - 3
             for x in layout.failures {
-                context.fill(Path(ellipseIn: CGRect(x: x - 2, y: baseline - 2, width: 4, height: 4)),
+                context.fill(Path(ellipseIn: CGRect(x: x - 1.5, y: baseline - 1.5, width: 3, height: 3)),
                              with: .color(coral))
             }
             if let last = layout.segments.last?.last {
-                context.fill(Path(ellipseIn: CGRect(x: last.x - 2.5, y: last.y - 2.5, width: 5, height: 5)),
+                context.fill(Path(ellipseIn: CGRect(x: last.x - 2, y: last.y - 2, width: 4, height: 4)),
                              with: .color(accent))
             }
         }
@@ -145,7 +152,7 @@ struct SignalBars: View {
     var body: some View {
         HStack(alignment: .bottom, spacing: 2) {
             ForEach(1...4, id: \.self) { level in
-                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                RoundedRectangle(cornerRadius: 1, style: .continuous)
                     .fill(level <= bars ? theme.color(tone) : theme.track)
                     .frame(width: 3, height: CGFloat(2 + level * 2))
             }
@@ -164,11 +171,11 @@ struct SpeedBar: View {
     let theme: Theme
 
     var body: some View {
-        let height: CGFloat = record.down.map { 6 + 22 * CGFloat($0 / peak) } ?? 4
+        let height: CGFloat = record.down.map { 4 + 18 * CGFloat($0 / peak) } ?? 3
         let color: Color = record.down.map { theme.color(speedTone($0, threshold: threshold)) } ?? theme.track
-        return RoundedRectangle(cornerRadius: 3, style: .continuous)
+        return RoundedRectangle(cornerRadius: 2, style: .continuous)
             .fill(color)
-            .frame(width: 14, height: height)
+            .frame(width: 10, height: height)
     }
 }
 
@@ -180,152 +187,119 @@ struct SpeedBars: View {
 
     var body: some View {
         let peak = max(records.compactMap { $0.down }.max() ?? 1, 1)
-        return HStack(alignment: .bottom, spacing: 6) {
+        return HStack(alignment: .bottom, spacing: 4) {
             ForEach(0..<records.count, id: \.self) { index in
                 SpeedBar(record: records[index], peak: peak, threshold: threshold, theme: theme)
             }
             Spacer(minLength: 0)
         }
-        .frame(height: 28, alignment: .bottom)
+        .frame(height: 22, alignment: .bottom)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Последние замеры скорости: \(records.count)")
     }
 }
 
-/// Переключатель периода «1 ч / 24 ч / 7 дн» с анимированной подсветкой.
-struct RangeSwitch: View {
-    @Binding var selection: HistoryRange
-    let theme: Theme
-
-    var body: some View {
-        HStack(spacing: 2) {
-            ForEach(HistoryRange.allCases, id: \.self) { range in
-                let selected = selection == range
-                Button {
-                    animateUI { selection = range }
-                } label: {
-                    Text(range.shortTitle)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(selected ? Color.primary : Color.secondary)
-                        .frame(minWidth: 40)
-                        .padding(.vertical, 4)
-                        .contentShape(Rectangle())
-                        .background {
-                            if selected {
-                                RoundedRectangle(cornerRadius: 7, style: .continuous).fill(theme.chip)
-                            }
-                        }
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Период: \(range.title)")
-                .accessibilityAddTraits(selected ? [.isSelected] : [])
-            }
-        }
-        .padding(2)
-        .background {
-            RoundedRectangle(cornerRadius: 9, style: .continuous).fill(theme.track.opacity(0.5))
-        }
-    }
-}
-
-/// Иконка-кнопка нижней панели. Точка-бейдж показывает доступное обновление.
+/// Иконка-кнопка нижней панели: плоская, с подсветкой при наведении. Точка-бейдж показывает доступное обновление.
 struct FooterIcon: View {
     let symbol: String
     let title: String
     let theme: Theme
     var badge = false
     let action: () -> Void
-    @State var hovering = false
 
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 13, weight: .medium))
-                .frame(width: 34, height: 30)
-                .background {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(hovering ? theme.chip : Color.clear)
-                }
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(.secondary)
+                .frame(width: 32, height: 26)
+                .hoverHighlight(theme)
                 .overlay(alignment: .topTrailing) {
                     if badge {
                         Circle()
                             .fill(theme.mint)
-                            .frame(width: 7, height: 7)
-                            .offset(x: -6, y: 6)
+                            .frame(width: 6, height: 6)
+                            .offset(x: -5, y: 5)
                     }
                 }
         }
         .buttonStyle(.plain)
-        .onHover { hovering = $0 }
         .help(title)
         .accessibilityLabel(title)
         .accessibilityValue(badge ? "Есть обновление" : "")
     }
 }
 
-/// Плитка метрики для сетки дашборда. Значение nil — пустое состояние с подсказкой в `caption`.
+/// Ячейка метрики без рамок: серый заголовок с символом сверху, значение под ним, подписи ниже.
+/// Каждая подпись — отдельная строка (до двух строк с уменьшением шрифта), поэтому текст не обрезается.
 /// Если задан `copyValue`, клик копирует значение.
 struct MetricTile: View {
     let title: String
     let symbol: String
     let value: String?
     var unit: String = ""
-    let caption: String
+    var details: [String] = []
     let theme: Theme
     var tone: Tone = .neutral
-    var valueSize: CGFloat = 20
     var signalBars: Int? = nil
     var copyValue: String? = nil
     @State var copied = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 5) {
                 Image(systemName: symbol)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(theme.color(tone))
+                    .font(.system(size: 11, weight: .regular))
                 Text(title)
-                    .font(Typo.label)
-                    .foregroundStyle(.secondary)
+                    .font(Typo.caption)
+                    .lineLimit(1)
                 Spacer(minLength: 0)
                 if copyValue != nil {
                     Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(copied ? theme.mint : Color.secondary)
+                        .font(.system(size: 10, weight: .regular))
+                        .foregroundStyle(copied ? theme.mint : Color(nsColor: .tertiaryLabelColor))
                 }
             }
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
+            .foregroundStyle(.secondary)
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
                 Text(value ?? "—")
-                    .font(Typo.display(valueSize))
+                    .font(Typo.value)
                     .monospacedDigit()
                     .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-                    .foregroundStyle(value == nil ? Color.secondary : theme.color(tone))
+                    .minimumScaleFactor(0.7)
+                    .foregroundStyle(valueColor)
                 if value != nil && !unit.isEmpty {
                     Text(unit)
-                        .font(Typo.label)
+                        .font(Typo.caption)
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
                 Spacer(minLength: 0)
                 if let signalBars {
                     SignalBars(bars: signalBars, tone: tone, theme: theme)
                 }
             }
-            Text(caption)
-                .font(Typo.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
+            ForEach(details, id: \.self) { line in
+                Text(line)
+                    .font(Typo.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.85)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
-        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .cardSurface(theme)
-        .contentShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        .contentShape(Rectangle())
         .onTapGesture { copy() }
         .help(copyValue == nil ? "" : "Нажмите, чтобы скопировать")
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(title): \(value ?? "нет данных") \(unit)")
-        .accessibilityHint(caption)
+        .accessibilityHint(details.joined(separator: ", "))
+    }
+
+    private var valueColor: Color {
+        if value == nil { return Color(nsColor: .tertiaryLabelColor) }
+        return tone == .neutral ? Color(nsColor: .labelColor) : theme.color(tone)
     }
 
     func copy() {

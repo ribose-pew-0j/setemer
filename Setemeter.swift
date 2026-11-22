@@ -214,16 +214,53 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         image?.isTemplate = true
         item.button?.image = image
         let shouldShowPing = showPing ?? Settings.shared.showPingInMenuBar
-        item.button?.title = shouldShowPing ? menuBarTitle(sample) : ""
+        if shouldShowPing {
+            // Фиксированная ширина под максимум «999»: иконка не прыгает при смене числа цифр и при «нет».
+            item.length = pingItemLength
+            item.button?.attributedTitle = menuBarTitle(sample)
+        } else {
+            item.length = NSStatusItem.variableLength
+            item.button?.attributedTitle = NSAttributedString(string: "")
+        }
         item.button?.toolTip = "Сетеметр · \(description)"
         item.button?.setAccessibilityLabel("Сетеметр, \(description)")
     }
 
+    /// Моноширинные цифры, чтобы ширина текста не зависела от значения.
+    private var pingFont: NSFont {
+        NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+    }
+
+    /// Ширина, которую занимает максимальное значение «999».
+    private var pingTextWidth: CGFloat {
+        ceil(NSAttributedString(string: "999", attributes: [.font: pingFont]).size().width)
+    }
+
+    /// Полная ширина пункта: иконка (≈18 pt) + отступ + текст «999» + поля кнопки.
+    private var pingItemLength: CGFloat {
+        18 + 4 + pingTextWidth + 8
+    }
+
     /// Короткий пинг рядом с иконкой: «74», а при отсутствии связи «нет».
-    private func menuBarTitle(_ sample: Sample?) -> String {
-        guard let sample else { return "" }
-        guard let milliseconds = sample.milliseconds else { return "нет" }
-        return String(milliseconds)
+    /// Текст выровнен по левому краю: справа добавляются пробелы-цифры до ширины «999»,
+    /// поэтому группа «иконка + текст» не смещается при смене значения.
+    private func menuBarTitle(_ sample: Sample?) -> NSAttributedString {
+        let text: String
+        if let sample {
+            text = sample.milliseconds.map { String($0) } ?? "нет"
+        } else {
+            text = ""
+        }
+        let font = pingFont
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .left
+        let attributes: [NSAttributedString.Key: Any] = [.font: font, .paragraphStyle: paragraph]
+        let figureSpace = "\u{2007}"
+        let spaceWidth = NSAttributedString(string: figureSpace, attributes: attributes).size().width
+        let textWidth = NSAttributedString(string: text, attributes: attributes).size().width
+        let padding = spaceWidth > 0 ? max(0, Int(((pingTextWidth - textWidth) / spaceWidth).rounded(.down))) : 0
+        return NSAttributedString(string: text + String(repeating: figureSpace, count: padding),
+                                  attributes: attributes)
     }
 
     private func card(menu: Bool = false, widgetVisible: Bool = true) -> Card {

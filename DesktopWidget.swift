@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Виджет на рабочем столе: статус со свечением, пинг, спарклайн, uptime за час, скорость и сводка сети.
+/// Виджет на рабочем столе: статус, пинг, спарклайн, uptime за час, скорость и короткая сводка сети.
 @MainActor
 struct DesktopWidget: View {
     @ObservedObject var monitor: Monitor
@@ -23,31 +23,24 @@ struct DesktopWidget: View {
             titleRow
             statusRow(theme: theme, tone: tone)
             Sparkline(samples: monitor.samples, tone: tone, theme: theme)
-                .frame(height: 34)
+                .frame(height: 28)
             HStack(spacing: 4) {
                 Text("Uptime за час")
+                    .lineLimit(1)
+                Spacer(minLength: 0)
                 Text(percentText(uptime))
-                    .fontWeight(.semibold)
                     .monospacedDigit()
                     .foregroundStyle(.primary)
-                Spacer(minLength: 0)
             }
             .font(Typo.caption)
             .foregroundStyle(.secondary)
-            Divider().overlay(theme.track)
+            Divider().opacity(0.6)
             speedRow(theme: theme)
             summaryRows
         }
         .padding(Spacing.window)
         .frame(width: 300)
-        .background {
-            RoundedRectangle(cornerRadius: Radius.window, style: .continuous).fill(theme.windowFill)
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: Radius.window, style: .continuous)
-                .strokeBorder(theme.color(tone).opacity(0.3), lineWidth: 1)
-                .allowsHitTesting(false)
-        }
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Radius.window, style: .continuous))
     }
 
     /// Заголовок. Всё, кроме кнопки закрытия, перетаскивает окно.
@@ -55,7 +48,7 @@ struct DesktopWidget: View {
         HStack {
             HStack {
                 Label("Сетеметр", systemImage: "waveform.path")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(Typo.caption)
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 0)
             }
@@ -63,7 +56,8 @@ struct DesktopWidget: View {
             .overlay { WindowDragArea() }
             Button(action: toggleWidget) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 10, weight: .regular))
+                    .foregroundStyle(.secondary)
                     .frame(width: 24, height: 22)
                     .contentShape(Rectangle())
             }
@@ -74,24 +68,26 @@ struct DesktopWidget: View {
     }
 
     private func statusRow(theme: Theme, tone: Tone) -> some View {
-        HStack(alignment: .center, spacing: 10) {
+        HStack(alignment: .center, spacing: 8) {
             StatusDot(tone: tone, theme: theme)
             VStack(alignment: .leading, spacing: 2) {
                 Text(status(monitor.latest))
-                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    .font(Typo.value)
+                    .lineLimit(1)
                 Text(lastCheckText)
                     .font(Typo.caption)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
             Spacer(minLength: 0)
-            HStack(alignment: .firstTextBaseline, spacing: 2) {
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
                 Text(pingText)
-                    .font(Typo.display(28))
+                    .font(Typo.hero)
                     .monospacedDigit()
+                    .lineLimit(1)
                     .foregroundStyle(theme.color(tone))
                 Text("мс")
-                    .font(Typo.label)
+                    .font(Typo.caption)
                     .foregroundStyle(.secondary)
             }
             .help("Время ответа HTTPS")
@@ -100,47 +96,55 @@ struct DesktopWidget: View {
 
     private func speedRow(theme: Theme) -> some View {
         HStack(spacing: 6) {
-            Label("Скачивание", systemImage: "arrow.down.circle")
-                .font(.system(size: 11, weight: .medium))
+            Label("Скачивание", systemImage: "arrow.down")
+                .font(Typo.caption)
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
             Spacer(minLength: 0)
             Text(diagnostics.speedSummary)
-                .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                .font(Typo.value)
+                .monospacedDigit()
+                .lineLimit(1)
                 .foregroundStyle(theme.color(speedToneValue))
             Button(action: diagnostics.testSpeed) {
-                Image(systemName: diagnostics.speedBusy ? "arrow.clockwise" : "bolt.fill")
+                Image(systemName: diagnostics.speedBusy ? "arrow.clockwise" : "bolt")
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 22, height: 20)
+                    .hoverHighlight(theme)
             }
-            .controlSize(.small)
+            .buttonStyle(.plain)
             .disabled(diagnostics.busy || diagnostics.speedBusy)
             .help(diagnostics.speedHelp)
             .accessibilityLabel("Измерить среднюю скорость")
         }
     }
 
+    /// Пять строк сводки: одна строка на пункт, длинные значения обрезаются посередине.
     private var summaryRows: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 4) {
             summaryRow("Внешний IPv4", diagnostics.value("Внешний IPv4"))
-            summaryRow("Внешний IPv6", diagnostics.value("Внешний IPv6"))
             summaryRow("Локальный IPv4", diagnostics.localIPv4)
             summaryRow("Маршрут", diagnostics.routeSummary)
             summaryRow("Шлюз", diagnostics.gatewaySummary)
-            summaryRow("DNS / прокси", diagnostics.dnsSummary)
             summaryRow("Проверки", diagnostics.httpsSummary)
         }
-        .font(.system(size: 11))
+        .font(Typo.caption)
         .help(diagnostics.checked.map { "Проверено в \($0.formatted(date: .omitted, time: .standard))" }
               ?? "Проверяем подключение…")
     }
 
     private func summaryRow(_ label: String, _ value: String?) -> some View {
-        HStack {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(label)
                 .foregroundStyle(.secondary)
-            Spacer(minLength: 6)
+                .lineLimit(1)
+                .fixedSize()
             Text(value ?? "—")
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .monospacedDigit()
                 .lineLimit(1)
                 .truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .trailing)
         }
     }
 

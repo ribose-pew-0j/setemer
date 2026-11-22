@@ -23,8 +23,8 @@ func rowStatus(_ row: DiagnosticRow) -> RowStatus {
     return RowStatus(tone: .neutral, symbol: "minus.circle")
 }
 
-/// Окно «Диагностика»: карточка скорости, сворачиваемые секции-карточки с цветовыми статусами
-/// и нижняя панель («Обновить», «Скопировать отчёт»).
+/// Окно «Диагностика»: в стиле Системных настроек — сгруппированные inset-списки на системном фоне,
+/// сворачиваемые секции, цветные значки только для статуса; нижняя панель с «Обновить» и «Скопировать отчёт».
 @MainActor
 struct DiagnosticsView: View {
     @ObservedObject var model: DiagnosticsModel
@@ -49,9 +49,9 @@ struct DiagnosticsView: View {
     var body: some View {
         let theme = self.theme
         return VStack(alignment: .leading, spacing: 14) {
-            header(theme: theme)
+            header
             ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 14) {
                     speedCard(theme: theme)
                     ForEach(model.groups.indices, id: \.self) { index in
                         section(index: index, theme: theme)
@@ -59,32 +59,21 @@ struct DiagnosticsView: View {
                 }
                 .padding(.bottom, 4)
             }
-            footer(theme: theme)
+            footer
         }
         .padding(20)
-        .background {
-            Rectangle().fill(theme.windowFill)
-        }
         .frame(minWidth: 550, minHeight: 450)
     }
 
     // MARK: Шапка
 
-    private func header(theme: Theme) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "network")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(theme.mint)
-                .frame(width: 42, height: 42)
-                .background {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous).fill(theme.mint.opacity(0.14))
-                }
-                .accessibilityHidden(true)
+    private var header: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Диагностика сети")
-                    .font(.system(size: 18, weight: .semibold, design: .rounded))
+                    .font(Typo.value)
                 Text(checkedText)
-                    .font(.caption)
+                    .font(Typo.caption)
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
@@ -105,21 +94,21 @@ struct DiagnosticsView: View {
     private func speedCard(theme: Theme) -> some View {
         let threshold = settings.speedWarningMbps
         let tone = model.downMbps.map { speedTone($0, threshold: threshold) } ?? .neutral
-        return VStack(alignment: .leading, spacing: 10) {
+        return VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(model.formattedSpeed ?? "—")
-                    .font(.system(size: 40, weight: .semibold, design: .rounded))
+                    .font(.system(size: 28, weight: .semibold))
                     .monospacedDigit()
                     .foregroundStyle(theme.color(tone))
                 Text(model.speedUnitTitle)
-                    .font(.callout)
+                    .font(Typo.body)
                     .foregroundStyle(.secondary)
                 if let upload = model.formattedUpload {
                     Text("↑ \(upload)")
-                        .font(.callout)
+                        .font(Typo.body)
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
-                        .padding(.leading, 10)
+                        .padding(.leading, 8)
                 }
                 Spacer(minLength: 0)
                 if model.speedBusy {
@@ -127,21 +116,25 @@ struct DiagnosticsView: View {
                         .controlSize(.small)
                 }
             }
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
             HStack(spacing: 10) {
                 Text(speedCaption)
-                    .font(.caption)
+                    .font(Typo.caption)
                     .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.85)
                 Spacer(minLength: 0)
                 Button(action: model.testSpeed) {
-                    Label(model.speedBusy ? "Тест идёт…" : "Измерить скорость", systemImage: "bolt.fill")
+                    Label(model.speedBusy ? "Тест идёт…" : "Измерить скорость", systemImage: "bolt")
+                        .lineLimit(1)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(theme.mint)
+                .buttonStyle(.bordered)
                 .disabled(model.speedBusy || model.busy)
             }
             if model.speedFailed {
                 Text("Тест не завершился. Попробуйте ещё раз.")
-                    .font(.caption)
+                    .font(Typo.caption)
                     .foregroundStyle(theme.amber)
             }
             let records = Array(SpeedHistory.shared.records.suffix(5))
@@ -149,8 +142,9 @@ struct DiagnosticsView: View {
                 SpeedBars(records: records, threshold: threshold, theme: theme)
             }
         }
-        .padding(15)
-        .cardSurface(theme)
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .groupSurface(theme)
     }
 
     private var speedCaption: String {
@@ -167,8 +161,9 @@ struct DiagnosticsView: View {
     private func section(index: Int, theme: Theme) -> some View {
         let info = index < sections.count ? sections[index] : (title: "Раздел", symbol: "list.bullet")
         let isCollapsed = collapsed.contains(index)
-        let problems = model.groups[index].filter { rowStatus($0).tone == .bad }.count
-        return VStack(alignment: .leading, spacing: 9) {
+        let rows = model.groups[index]
+        let problems = rows.filter { rowStatus($0).tone == .bad }.count
+        return VStack(alignment: .leading, spacing: 0) {
             Button {
                 animateUI {
                     if isCollapsed {
@@ -180,20 +175,20 @@ struct DiagnosticsView: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: info.symbol)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(theme.mint)
+                        .font(.system(size: 13, weight: .regular))
+                        .foregroundStyle(.secondary)
                         .frame(width: 18)
                     Text(info.title)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(Typo.body)
                     Spacer(minLength: 8)
                     if problems > 0 {
                         Text("проблем: \(problems)")
-                            .font(.caption)
+                            .font(Typo.caption)
                             .foregroundStyle(theme.coral)
                     }
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.tertiary)
                         .rotationEffect(.degrees(isCollapsed ? 0 : 90))
                 }
                 .contentShape(Rectangle())
@@ -201,16 +196,25 @@ struct DiagnosticsView: View {
             .buttonStyle(.plain)
             .accessibilityHint(isCollapsed ? "Развернуть секцию" : "Свернуть секцию")
             if !isCollapsed {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(model.groups[index]) { row in
-                        rowView(row, theme: theme)
+                Divider()
+                    .opacity(0.6)
+                    .padding(.vertical, 8)
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(rows.indices, id: \.self) { rowIndex in
+                        if rowIndex > 0 {
+                            Divider()
+                                .opacity(0.6)
+                                .padding(.leading, 26)
+                        }
+                        rowView(rows[rowIndex], theme: theme)
                     }
                 }
                 .transition(.opacity)
             }
         }
-        .padding(13)
-        .cardSurface(theme)
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .groupSurface(theme)
     }
 
     private func rowView(_ row: DiagnosticRow, theme: Theme) -> some View {
@@ -222,16 +226,17 @@ struct DiagnosticsView: View {
                 .frame(width: 14)
                 .accessibilityHidden(true)
             Text(row.name)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+                .font(Typo.body)
             Spacer(minLength: 12)
             Text(row.value)
-                .font(.system(size: 12, design: .monospaced))
+                .font(Typo.body)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
                 .multilineTextAlignment(.trailing)
                 .textSelection(.enabled)
             copyButton(row, theme: theme)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 5)
         .onHover { inside in
             if inside {
                 hoveredRow = row.name
@@ -250,7 +255,7 @@ struct DiagnosticsView: View {
             copy(row)
         } label: {
             Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: 10, weight: .regular))
                 .foregroundStyle(copied ? theme.mint : Color.secondary)
                 .frame(width: 20, height: 20)
                 .contentShape(Rectangle())
@@ -275,22 +280,22 @@ struct DiagnosticsView: View {
 
     // MARK: Нижняя панель
 
-    private func footer(theme: Theme) -> some View {
+    private var footer: some View {
         HStack(spacing: 10) {
             Text("Внешний IP определяет ipify для текущего маршрута.")
-                .font(.caption)
+                .font(Typo.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
             Spacer(minLength: 0)
             Button(action: model.refresh) {
                 Label("Обновить", systemImage: "arrow.clockwise")
             }
+            .buttonStyle(.bordered)
             .disabled(model.busy || model.speedBusy)
             Button(action: copyReport) {
                 Label("Скопировать отчёт", systemImage: "doc.on.doc")
             }
-            .buttonStyle(.borderedProminent)
-            .tint(theme.mint)
+            .buttonStyle(.bordered)
             .disabled(model.groups.isEmpty || model.busy)
         }
     }

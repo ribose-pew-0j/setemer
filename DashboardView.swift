@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Дашборд меню-панели (~380 pt): шапка, график задержки, плитки метрик, скорость и нижняя панель.
+/// Дашборд меню-панели (380 pt, высота ≤ 520 pt): шапка с пингом, график задержки,
+/// сетка метрик (скорость, джиттер, потери, Wi‑Fi, IP) и нижняя панель. Разделители вместо карточек.
 @MainActor
 struct DashboardView: View {
     @ObservedObject var monitor: Monitor
@@ -33,46 +34,46 @@ struct DashboardView: View {
         let tone = sampleTone(monitor.latest, threshold: settings.slowPingThresholdMs)
         let points = HistoryStore.shared.points(for: range)
         let stats = HistoryStore.shared.stats(for: range)
-        return VStack(alignment: .leading, spacing: 12) {
+        return VStack(alignment: .leading, spacing: 10) {
             header(theme: theme, tone: tone)
-            chartCard(theme: theme, points: points, stats: stats)
-            tiles(theme: theme)
-            speedCard(theme: theme)
+            hairline
+            chartSection(theme: theme, points: points, stats: stats)
+            hairline
+            metricsSection(theme: theme)
+            hairline
             footer(theme: theme)
         }
         .padding(Spacing.window)
         .frame(width: 380)
-        .background {
-            RoundedRectangle(cornerRadius: Radius.window, style: .continuous).fill(theme.windowFill)
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: Radius.window, style: .continuous)
-                .strokeBorder(theme.color(tone).opacity(0.3), lineWidth: 1)
-                .allowsHitTesting(false)
-        }
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Radius.window, style: .continuous))
+    }
+
+    private var hairline: some View {
+        Divider().opacity(0.6)
     }
 
     // MARK: Шапка
 
     private func header(theme: Theme, tone: Tone) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 7) {
                     StatusDot(tone: tone, theme: theme)
                     Text(status(monitor.latest))
-                        .font(Typo.title)
+                        .font(Typo.value)
                 }
                 networkLine(theme: theme)
             }
             Spacer(minLength: 0)
-            VStack(alignment: .trailing, spacing: 0) {
+            VStack(alignment: .trailing, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: 3) {
                     Text(pingText)
-                        .font(Typo.display(38))
+                        .font(Typo.hero)
                         .monospacedDigit()
+                        .lineLimit(1)
                         .foregroundStyle(theme.color(tone))
                     Text("мс")
-                        .font(Typo.label)
+                        .font(Typo.caption)
                         .foregroundStyle(.secondary)
                 }
                 Text(lastCheckText)
@@ -84,99 +85,105 @@ struct DashboardView: View {
     }
 
     private func networkLine(theme: Theme) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 5) {
             Image(systemName: networkSymbol)
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: 10, weight: .regular))
             Text(diagnostics.networkType ?? "Определяем сеть…")
+                .lineLimit(1)
             if let rssi = diagnostics.wifiRSSI {
                 let bars = signalBarCount(rssi)
                 SignalBars(bars: bars, tone: signalTone(bars: bars), theme: theme)
-                Text("\(rssi) дБм")
-                    .monospacedDigit()
             }
         }
-        .font(.system(size: 11))
+        .font(Typo.caption)
         .foregroundStyle(.secondary)
     }
 
     // MARK: График
 
-    private func chartCard(theme: Theme, points: [HistoryPoint], stats: HistoryStats) -> some View {
+    private func chartSection(theme: Theme, points: [HistoryPoint], stats: HistoryStats) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
+            HStack(spacing: 8) {
                 Text("Задержка")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(Typo.caption)
+                    .foregroundStyle(.secondary)
                 Spacer(minLength: 8)
-                RangeSwitch(selection: $range, theme: theme)
+                Picker("Период", selection: $range) {
+                    ForEach(HistoryRange.allCases, id: \.self) { item in
+                        Text(item.shortTitle).tag(item)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
             }
             LatencyChart(points: points, range: range, stats: stats, theme: theme,
                          threshold: settings.slowPingThresholdMs)
                 .id(range)
                 .transition(.opacity)
-            HStack(spacing: 14) {
+            HStack(alignment: .top, spacing: 18) {
                 statItem("Медиана", msText(stats.medianMs))
                 statItem("p95", msText(stats.p95Ms))
                 statItem("Доступность", percentText(stats.uptimePercent))
                 Spacer(minLength: 0)
             }
         }
-        .padding(Spacing.card)
-        .cardSurface(theme)
+        .animation(Motion.animation, value: range)
     }
 
     private func statItem(_ title: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
+        VStack(alignment: .leading, spacing: 2) {
             Text(title)
                 .font(Typo.caption)
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
             Text(value)
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .font(Typo.body)
                 .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
         }
     }
 
-    // MARK: Плитки
+    // MARK: Скорость и метрики
 
-    private func tiles(theme: Theme) -> some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 10) {
-                MetricTile(title: "Скачивание", symbol: "arrow.down.circle",
-                           value: diagnostics.formattedSpeed, unit: diagnostics.speedUnitTitle,
-                           caption: downloadCaption, theme: theme, tone: downloadTone)
-                MetricTile(title: "Отдача", symbol: "arrow.up.circle",
-                           value: diagnostics.formattedUpload, unit: diagnostics.speedUnitTitle,
-                           caption: uploadCaption, theme: theme, tone: uploadTone)
+    /// Скорость и метрики одной сеткой 2 × 3. Замер скорости запускается иконкой в нижней панели.
+    private func metricsSection(theme: Theme) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 16) {
+                MetricTile(title: "Скачивание", symbol: "arrow.down", value: diagnostics.formattedSpeed,
+                           unit: diagnostics.speedUnitTitle, details: [speedCaption],
+                           theme: theme, tone: downloadTone)
+                MetricTile(title: "Отдача", symbol: "arrow.up", value: diagnostics.formattedUpload,
+                           unit: diagnostics.speedUnitTitle, details: [speedCaption],
+                           theme: theme, tone: uploadTone)
             }
-            HStack(spacing: 10) {
-                MetricTile(title: "Джиттер", symbol: "waveform",
-                           value: jitterText, unit: "мс",
-                           caption: jitterCaption, theme: theme, tone: jitterLevel)
-                MetricTile(title: "Потери", symbol: "exclamationmark.triangle",
-                           value: lossText, caption: lossCaption, theme: theme, tone: lossLevel)
+            HStack(alignment: .top, spacing: 16) {
+                MetricTile(title: "Джиттер", symbol: "waveform", value: jitterText, unit: "мс",
+                           details: [jitterCaption], theme: theme, tone: jitterLevel)
+                MetricTile(title: "Потери", symbol: "exclamationmark.triangle", value: lossText,
+                           details: [lossCaption], theme: theme, tone: lossLevel)
             }
-            HStack(spacing: 10) {
-                MetricTile(title: "Wi-Fi", symbol: "wifi",
-                           value: rssiText, unit: "дБм",
-                           caption: wifiCaption, theme: theme, tone: wifiTone,
-                           signalBars: wifiBars)
-                MetricTile(title: "Внешний IP", symbol: "globe",
-                           value: diagnostics.publicIPv4, caption: ipCaption, theme: theme,
-                           tone: ipTone, valueSize: 16, copyValue: diagnostics.publicIPv4)
+            HStack(alignment: .top, spacing: 16) {
+                MetricTile(title: "Wi‑Fi", symbol: "wifi", value: rssiText, unit: "дБм",
+                           details: wifiDetails, theme: theme, tone: wifiTone, signalBars: wifiBars)
+                MetricTile(title: "Внешний IP", symbol: "globe", value: diagnostics.publicIPv4,
+                           details: ipDetails, theme: theme, tone: ipTone,
+                           copyValue: diagnostics.publicIPv4)
             }
         }
     }
 
-    private var downloadCaption: String {
-        diagnostics.speedDate.map { "Замер в \($0.formatted(date: .omitted, time: .shortened))" }
-            ?? "Нет замера — нажмите ⚡"
+    private var speedCaption: String {
+        if diagnostics.speedBusy { return "Идёт замер…" }
+        if let date = diagnostics.speedDate {
+            return "Замер в \(date.formatted(date: .omitted, time: .shortened))"
+        }
+        return diagnostics.speedFailed ? "Замер не удался" : "Нет замера"
     }
 
     private var downloadTone: Tone {
         diagnostics.downMbps.map { speedTone($0, threshold: settings.speedWarningMbps) } ?? .neutral
-    }
-
-    private var uploadCaption: String {
-        diagnostics.upMbps == nil ? "Нет замера — нажмите ⚡" : "Cloudflare · 2 замера"
     }
 
     private var uploadTone: Tone {
@@ -188,7 +195,7 @@ struct DashboardView: View {
     }
 
     private var jitterCaption: String {
-        diagnostics.jitterMs == nil ? "Нет замера — ждём проверку" : "10 HEAD-запросов"
+        diagnostics.jitterMs == nil ? "Нет замера, ждём проверку" : "10 HEAD-запросов"
     }
 
     private var jitterLevel: Tone {
@@ -200,7 +207,7 @@ struct DashboardView: View {
     }
 
     private var lossCaption: String {
-        diagnostics.lossPercent.map { "ответили \(10 - Int($0) / 10) из 10" } ?? "Нет замера — ждём проверку"
+        diagnostics.lossPercent.map { "ответили \(10 - Int($0) / 10) из 10" } ?? "Нет замера, ждём проверку"
     }
 
     private var lossLevel: Tone {
@@ -211,13 +218,16 @@ struct DashboardView: View {
         diagnostics.wifiRSSI.map { "\($0)" }
     }
 
-    private var wifiCaption: String {
-        guard let wifi = diagnostics.wifi else { return "Нет Wi-Fi соединения" }
-        var parts: [String] = []
-        if let band = wifi.band { parts.append(band) }
-        if let channel = wifi.channel { parts.append("канал \(channel)") }
-        if let rate = wifi.txRate { parts.append("\(Int(rate.rounded())) Мбит/с") }
-        return parts.isEmpty ? "Сигнал Wi-Fi" : parts.joined(separator: " · ")
+    /// Диапазон и канал — в первой строке, скорость линка — во второй.
+    private var wifiDetails: [String] {
+        guard let wifi = diagnostics.wifi else { return ["Нет Wi‑Fi соединения"] }
+        var lines: [String] = []
+        var place: [String] = []
+        if let band = wifi.band { place.append(band) }
+        if let channel = wifi.channel { place.append("кан. \(channel)") }
+        if !place.isEmpty { lines.append(place.joined(separator: " · ")) }
+        if let rate = wifi.txRate { lines.append("\(Int(rate.rounded())) Мбит/с") }
+        return lines.isEmpty ? ["Сигнал Wi‑Fi"] : lines
     }
 
     private var wifiBars: Int? {
@@ -228,79 +238,27 @@ struct DashboardView: View {
         wifiBars.map { signalTone(bars: $0) } ?? .neutral
     }
 
-    private var ipCaption: String {
-        if diagnostics.publicIPv4 == nil { return "Нет ответа — обновится при проверке" }
-        return diagnostics.ipInfo?.summary ?? "Нажмите, чтобы скопировать"
+    /// Страна (с городом) и провайдер — каждое на своей строке.
+    private var ipDetails: [String] {
+        if diagnostics.publicIPv4 == nil { return ["Нет ответа, обновится при проверке"] }
+        guard let info = diagnostics.ipInfo else { return ["Нажмите, чтобы скопировать"] }
+        var lines: [String] = []
+        let place = [info.country, info.city].compactMap { $0 }.filter { !$0.isEmpty }
+        if !place.isEmpty { lines.append(place.joined(separator: ", ")) }
+        if let provider = info.provider, !provider.isEmpty { lines.append(provider) }
+        return lines.isEmpty ? ["Нажмите, чтобы скопировать"] : lines
     }
 
     private var ipTone: Tone {
         diagnostics.publicIPv4 == nil ? .neutral : .good
     }
 
-    // MARK: Скорость
-
-    private func speedCard(theme: Theme) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Label("Скорость", systemImage: "speedometer")
-                    .font(.system(size: 12, weight: .semibold))
-                Spacer(minLength: 8)
-                speedButton(theme: theme)
-            }
-            Text(lastSpeedText)
-                .font(Typo.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            let records = Array(SpeedHistory.shared.records.suffix(5))
-            if !records.isEmpty {
-                SpeedBars(records: records, threshold: settings.speedWarningMbps, theme: theme)
-            }
-        }
-        .padding(Spacing.card)
-        .cardSurface(theme)
-    }
-
-    private func speedButton(theme: Theme) -> some View {
-        Button(action: diagnostics.testSpeed) {
-            HStack(spacing: 5) {
-                if diagnostics.speedBusy {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text("Замер…")
-                } else {
-                    Image(systemName: "bolt.fill")
-                    Text("Измерить")
-                }
-            }
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(theme.mint)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background {
-                Capsule().fill(theme.mint.opacity(0.16))
-            }
-        }
-        .buttonStyle(.plain)
-        .disabled(diagnostics.speedBusy || diagnostics.busy)
-        .help(diagnostics.speedHelp)
-        .accessibilityLabel("Измерить среднюю скорость")
-    }
-
-    private var lastSpeedText: String {
-        guard let date = diagnostics.speedDate, let down = diagnostics.formattedSpeed else {
-            return diagnostics.speedFailed ? "Последний замер не удался — попробуйте ещё раз" : "Нет замера — нажмите ⚡"
-        }
-        var text = "↓ \(down)"
-        if let up = diagnostics.formattedUpload {
-            text += " · ↑ \(up)"
-        }
-        return "\(text) \(diagnostics.speedUnitTitle) · \(date.formatted(date: .omitted, time: .shortened))"
-    }
-
     // MARK: Нижняя панель
 
     private func footer(theme: Theme) -> some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 2) {
+            FooterIcon(symbol: diagnostics.speedBusy ? "arrow.clockwise" : "bolt",
+                       title: "Измерить скорость", theme: theme, action: diagnostics.testSpeed)
             FooterIcon(symbol: "network", title: "Диагностика", theme: theme, action: diagnose)
             FooterIcon(symbol: "gearshape", title: "Настройки", theme: theme, action: openSettings)
             FooterIcon(symbol: "square.and.arrow.up", title: "Экспорт истории в CSV", theme: theme,
@@ -313,8 +271,10 @@ struct DashboardView: View {
             Spacer(minLength: 0)
             Button(action: quit) {
                 Image(systemName: "power")
-                    .font(.system(size: 13, weight: .medium))
-                    .frame(width: 34, height: 30)
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 32, height: 26)
+                    .hoverHighlight(theme)
             }
             .buttonStyle(.plain)
             .keyboardShortcut("q")
