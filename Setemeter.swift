@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 private let probes = [
@@ -39,10 +40,21 @@ private final class Monitor: ObservableObject {
     }()
     private var timer: Timer?
     private var pending: Task<Void, Never>?
+    private var settingsObserver: AnyCancellable?
 
     func start() {
         tick()
-        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+        scheduleTimer(seconds: Settings.shared.checkIntervalSeconds)
+        // Смена интервала в настройках перезапускает таймер (значение берём из замыкания: @Published отдаёт его до записи).
+        settingsObserver = Settings.shared.$checkIntervalSeconds
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] seconds in self?.scheduleTimer(seconds: seconds) }
+    }
+
+    private func scheduleTimer(seconds: Int) {
+        timer?.invalidate()
+        let timer = Timer(timeInterval: TimeInterval(seconds), repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }
         timer.tolerance = 0.03
@@ -72,7 +84,10 @@ private final class Monitor: ObservableObject {
                 }
                 return nil
             }
-            samples = Array((samples + [Sample(date: .now, milliseconds: result)]).suffix(30))
+            let date = Date.now
+            samples = Array((samples + [Sample(date: date, milliseconds: result)]).suffix(30))
+            HistoryStore.shared.append(date: date, milliseconds: result)
+            Notifier.shared.observeCheck(online: result != nil, at: date)
             pending = nil
         }
     }
@@ -261,9 +276,9 @@ private struct Card: View {
     }
 
     private var speedSummary: String {
-        if let value = diagnostics.formattedSpeed { return "\(value) Мбит/с" }
+        if let value = diagnostics.formattedSpeed { return "\(value) \(diagnostics.speedUnitTitle)" }
         if diagnostics.speedBusy { return "Замер…" }
-        return diagnostics.speedFailed ? "Нет замера" : "— Мбит/с"
+        return diagnostics.speedFailed ? "Нет замера" : "— \(diagnostics.speedUnitTitle)"
     }
 
     private var speedHelp: String {
@@ -323,6 +338,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private let updater = Updater()
     private var menuPanel: MenuPanel?
     private var diagnosticsWindow: NSWindow?
+    private var settingsWindow: NSWindow?
+    private var openSettingsObserver: Any?
     private var outsideClick: Any?
     private var localEvents: Any?
     private var item: NSStatusItem!
@@ -376,6 +393,16 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         timer.tolerance = 5
         RunLoop.main.add(timer, forMode: .common)
         diagnosticsTimer = timer
+
+        openSettingsObserver = NotificationCenter.default.addObserver(
+            forName: .setemeterOpenSettings, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.openSettings() }
+        }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        HistoryStore.shared.flush()
     }
 
     private func updateMenuBar(_ sample: Sample?) {
@@ -468,6 +495,25 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         window.contentMinSize = NSSize(width: 550, height: 450)
         window.center()
         diagnosticsWindow = window
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    func openSettings() {
+        closeMenu()
+        if let settingsWindow {
+            settingsWindow.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 520),
+                              styleMask: [.titled, .closable],
+                              backing: .buffered, defer: false)
+        window.title = "Настройки"
+        window.isReleasedWhenClosed = false
+        window.contentView = NSHostingView(rootView: SettingsView())
+        window.center()
+        settingsWindow = window
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
     }
