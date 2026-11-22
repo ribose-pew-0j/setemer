@@ -17,6 +17,11 @@ jobs:
       - name: Build
         run: bash build.sh
 
+      - name: Render panel preview on macOS
+        run: |
+          xcrun swiftc -D PANEL_PREVIEW -parse-as-library *.swift previews/DashboardPreview.swift -o build/preview
+          build/preview
+
       - name: Package
         run: |
           cd build
@@ -34,6 +39,6 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           gh release create "$TAG" \
-            build/Setemeter.dmg build/Setemeter.zip build/Setemeter.zip.sha256 \
+            build/Setemeter.dmg build/Setemeter.zip build/Setemeter.zip.sha256 build/panel.png \
             --title "Сетеметр $TAG" \
             --generate-notes

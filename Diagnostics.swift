@@ -582,3 +582,19 @@ final class DiagnosticsModel: ObservableObject {
         }
     }
 }
+
+#if PANEL_PREVIEW
+extension DiagnosticsModel {
+    func setPreviewValues(date: Date) {
+        networkType = "Ethernet · VPN"
+        speedDate = date
+        downMbps = 59.1
+        upMbps = 45.2
+        jitterMs = 20.8
+        lossPercent = 0
+        wifi = WiFiStatus(rssi: -59, noise: nil, channel: 44, band: "5 ГГц", txRate: 300)
+        publicIPv4 = "203.0.113.42"
+        ipInfo = IPInfo(country: "Нидерланды", provider: "Example Network", city: "Амстердам")
+    }
+}
+#endif

@@ -240,6 +240,7 @@ struct MetricTile: View {
     var unit: String = ""
     var details: [String] = []
     let theme: Theme
+    let accent: Color
     var tone: Tone = .neutral
     var signalBars: Int? = nil
     var copyValue: String? = nil
@@ -250,7 +251,9 @@ struct MetricTile: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 5) {
                 Image(systemName: symbol)
-                    .font(.system(size: 11, weight: .regular))
+                    .font(.system(size: prominent ? 20 : 14, weight: .semibold))
+                    .foregroundStyle(accent)
+                    .frame(width: prominent ? 23 : 18)
                 Text(title)
                     .font(Typo.caption)
                     .lineLimit(1)
@@ -264,7 +267,7 @@ struct MetricTile: View {
             .foregroundStyle(.secondary)
             HStack(alignment: .firstTextBaseline, spacing: 3) {
                 Text(value ?? "—")
-                    .font(.system(size: prominent ? 22 : 15, weight: .semibold))
+                    .font(.system(size: prominent ? 27 : 16, weight: .semibold, design: .rounded))
                     .monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
@@ -290,6 +293,13 @@ struct MetricTile: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(prominent ? 11 : 0)
+        .background {
+            if prominent {
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .fill(accent.opacity(theme.isDark ? 0.16 : 0.09))
+            }
+        }
         .contentShape(Rectangle())
         .onTapGesture { copy() }
         .help(copyValue == nil ? "" : "Нажмите, чтобы скопировать")

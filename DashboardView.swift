@@ -7,6 +7,7 @@ struct DashboardView: View {
     @ObservedObject var updater: Updater
     @ObservedObject var settings = Settings.shared
     @Environment(\.colorScheme) var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State var range: HistoryRange = .hour
     let widgetVisible: Bool
     let toggleWidget: () -> Void
@@ -33,20 +34,29 @@ struct DashboardView: View {
         let points = HistoryStore.shared.points(for: range)
         let stats = HistoryStore.shared.stats(for: range)
         return VStack(alignment: .leading, spacing: 12) {
-            header(theme: theme, tone: tone)
-            chartSection(theme: theme, points: points, stats: stats)
-                .padding(12)
-                .groupSurface(theme)
+            VStack(alignment: .leading, spacing: 14) {
+                header(theme: Theme(.dark), tone: tone)
+                Divider().overlay(.white.opacity(0.14))
+                chartSection(theme: Theme(.dark), points: points, stats: stats)
+            }
+            .padding(16)
+            .background {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(LinearGradient(colors: [Color(red: 0.08, green: 0.15, blue: 0.24),
+                                                  Color(red: 0.09, green: 0.21, blue: 0.28),
+                                                  Color(red: 0.08, green: 0.30, blue: 0.32)],
+                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+            }
+            .environment(\.colorScheme, .dark)
             speedSection(theme: theme)
+            metricsSection(theme: theme)
                 .padding(12)
                 .groupSurface(theme)
-            metricsSection(theme: theme)
-                .padding(.horizontal, 8)
             Divider()
             footer(theme: theme)
         }
-        .padding(Spacing.window)
-        .frame(width: 400)
+        .padding(12)
+        .frame(width: 410)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Radius.window, style: .continuous))
     }
 
@@ -54,22 +64,24 @@ struct DashboardView: View {
 
     private func header(theme: Theme, tone: Tone) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: networkSymbol)
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(theme.color(tone))
-                .frame(width: 38, height: 38)
-                .background(theme.color(tone).opacity(0.10), in: Circle())
-                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
                 Text(status(monitor.latest))
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 18, weight: .semibold, design: .rounded))
                 networkLine(theme: theme)
             }
             Spacer(minLength: 0)
             VStack(alignment: .trailing, spacing: 2) {
-                HStack(alignment: .firstTextBaseline, spacing: 3) {
+                HStack(alignment: .center, spacing: 7) {
+                    ZStack {
+                        Circle().fill(theme.color(tone)).frame(width: 7, height: 7)
+                        if !reduceMotion, let sample = monitor.latest {
+                            PingRipple(color: theme.color(tone)).id(sample.id)
+                        }
+                    }
+                    .frame(width: 19, height: 19)
+                    .accessibilityHidden(true)
                     Text(pingText)
-                        .font(Typo.hero)
+                        .font(.system(size: 38, weight: .bold, design: .rounded))
                         .monospacedDigit()
                         .lineLimit(1)
                         .foregroundStyle(theme.color(tone))
@@ -87,6 +99,7 @@ struct DashboardView: View {
 
     private func networkLine(theme: Theme) -> some View {
         HStack(spacing: 5) {
+            Image(systemName: networkSymbol)
             Text(diagnostics.networkType ?? "Определяем сеть…")
                 .lineLimit(1)
             if networkSymbol == "wifi", let rssi = diagnostics.wifiRSSI {
@@ -103,7 +116,7 @@ struct DashboardView: View {
     private func chartSection(theme: Theme, points: [HistoryPoint], stats: HistoryStats) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Text("Задержка")
+                Label("Задержка", systemImage: "waveform.path.ecg")
                     .font(Typo.value)
                 Spacer(minLength: 8)
                 Picker("Период", selection: $range) {
@@ -150,7 +163,7 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 9) {
             HStack {
                 Text("Скорость")
-                    .font(Typo.value)
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
                 Text(speedCaption)
                     .font(Typo.caption)
                     .foregroundStyle(.secondary)
@@ -158,14 +171,16 @@ struct DashboardView: View {
                 Button(action: diagnostics.testSpeed) {
                     Label("Измерить", systemImage: "bolt.fill")
                 }
+                .buttonStyle(.borderedProminent)
+                .tint(.indigo)
                 .controlSize(.small)
                 .disabled(diagnostics.speedBusy)
             }
-            HStack(alignment: .top, spacing: 16) {
-                MetricTile(title: "Скачивание", symbol: "arrow.down", value: diagnostics.formattedSpeed,
-                           unit: diagnostics.speedUnitTitle, theme: theme, tone: downloadTone, prominent: true)
-                MetricTile(title: "Отдача", symbol: "arrow.up", value: diagnostics.formattedUpload,
-                           unit: diagnostics.speedUnitTitle, theme: theme, tone: uploadTone, prominent: true)
+            HStack(alignment: .top, spacing: 8) {
+                MetricTile(title: "Скачивание", symbol: "arrow.down.left.circle.fill", value: diagnostics.formattedSpeed,
+                           unit: diagnostics.speedUnitTitle, theme: theme, accent: .blue, tone: downloadTone, prominent: true)
+                MetricTile(title: "Отдача", symbol: "arrow.up.right.circle.fill", value: diagnostics.formattedUpload,
+                           unit: diagnostics.speedUnitTitle, theme: theme, accent: .purple, tone: uploadTone, prominent: true)
             }
         }
     }
@@ -174,15 +189,15 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 16) {
                 MetricTile(title: "Джиттер", symbol: "waveform", value: jitterText, unit: "мс",
-                           details: [jitterCaption], theme: theme, tone: jitterLevel)
-                MetricTile(title: "Потери", symbol: "exclamationmark.triangle", value: lossText,
-                           details: [lossCaption], theme: theme, tone: lossLevel)
+                           details: [jitterCaption], theme: theme, accent: .orange, tone: jitterLevel)
+                MetricTile(title: "Потери", symbol: "square.stack.3d.up.fill", value: lossText,
+                           details: [lossCaption], theme: theme, accent: .pink, tone: lossLevel)
             }
             HStack(alignment: .top, spacing: 16) {
                 MetricTile(title: "Wi‑Fi", symbol: "wifi", value: rssiText, unit: "дБм",
-                           details: wifiDetails, theme: theme, tone: wifiTone, signalBars: wifiBars)
-                MetricTile(title: "Внешний IP", symbol: "globe", value: diagnostics.publicIPv4,
-                           details: ipDetails, theme: theme, tone: ipTone,
+                           details: wifiDetails, theme: theme, accent: .teal, tone: wifiTone, signalBars: wifiBars)
+                MetricTile(title: "Внешний IP", symbol: "globe.europe.africa.fill", value: diagnostics.publicIPv4,
+                           details: ipDetails, theme: theme, accent: .indigo, tone: ipTone,
                            copyValue: diagnostics.publicIPv4)
             }
         }
@@ -271,8 +286,8 @@ struct DashboardView: View {
 
     private func footer(theme: Theme) -> some View {
         HStack(spacing: 2) {
-            FooterIcon(symbol: "network", title: "Диагностика", theme: theme, action: diagnose)
-            FooterIcon(symbol: "gearshape", title: "Настройки", theme: theme, action: openSettings)
+            FooterIcon(symbol: "stethoscope", title: "Диагностика", theme: theme, action: diagnose)
+            FooterIcon(symbol: "gearshape.fill", title: "Настройки", theme: theme, action: openSettings)
             FooterIcon(symbol: "square.and.arrow.up", title: "Экспорт истории в CSV", theme: theme,
                        action: exportCSV)
             FooterIcon(symbol: "arrow.triangle.2.circlepath", title: updateTitle, theme: theme,
@@ -337,5 +352,20 @@ struct DashboardView: View {
         if type.hasPrefix("Wi") { return "wifi" }
         if type.hasPrefix("Ethernet") { return "cable.connector" }
         return "network"
+    }
+}
+
+private struct PingRipple: View {
+    let color: Color
+    @State private var expanded = false
+
+    var body: some View {
+        Circle()
+            .stroke(color, lineWidth: 1.5)
+            .scaleEffect(expanded ? 1 : 0.35)
+            .opacity(expanded ? 0 : 0.95)
+            .onAppear {
+                withAnimation(.easeOut(duration: 0.85)) { expanded = true }
+            }
     }
 }

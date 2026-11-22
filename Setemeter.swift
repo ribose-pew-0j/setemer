@@ -380,6 +380,13 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+#if PANEL_PREVIEW
+extension Monitor {
+    func setPreviewSample(date: Date, milliseconds: Int) {
+        samples = [Sample(date: date, milliseconds: milliseconds)]
+    }
+}
+#else
 @main
 struct Setemeter {
     @MainActor static func main() {
@@ -389,3 +396,4 @@ struct Setemeter {
         withExtendedLifetime(delegate) { app.run() }
     }
 }
+#endif
