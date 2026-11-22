@@ -16,6 +16,7 @@ struct SettingsView: View {
                 }
                 Stepper("Медленный ответ от \(settings.slowPingThresholdMs) мс",
                         value: $settings.slowPingThresholdMs, in: 50...2000, step: 10)
+                Toggle("Пинг в строке меню", isOn: $settings.showPingInMenuBar)
             }
 
             Section("Уведомления") {

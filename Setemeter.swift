@@ -16,7 +16,7 @@ final class NoRedirects: NSObject, URLSessionTaskDelegate {
     }
 }
 
-private struct Sample: Identifiable {
+struct Sample: Identifiable {
     let id = UUID()
     let date: Date
     let milliseconds: Int?
@@ -25,7 +25,7 @@ private struct Sample: Identifiable {
 }
 
 @MainActor
-private final class Monitor: ObservableObject {
+final class Monitor: ObservableObject {
     @Published private(set) var samples: [Sample] = []
     var latest: Sample? { samples.last }
 
@@ -93,17 +93,17 @@ private final class Monitor: ObservableObject {
     }
 }
 
-private func status(_ sample: Sample?) -> String {
+func status(_ sample: Sample?) -> String {
     guard let sample else { return "Проверяем…" }
     return sample.online ? "Интернет есть" : "Нет ответа"
 }
 
-private func symbol(_ sample: Sample?) -> String {
+func symbol(_ sample: Sample?) -> String {
     guard let sample else { return "ellipsis" }
     return sample.online ? "checkmark.circle.fill" : "xmark.circle.fill"
 }
 
-private struct WindowDragArea: NSViewRepresentable {
+struct WindowDragArea: NSViewRepresentable {
     func makeNSView(context: Context) -> DragView { DragView() }
     func updateNSView(_ view: DragView, context: Context) {}
 
@@ -120,211 +120,6 @@ private struct WindowDragArea: NSViewRepresentable {
             addCursorRect(bounds, cursor: .openHand)
         }
     }
-}
-
-private struct Card: View {
-    @ObservedObject var monitor: Monitor
-    @ObservedObject var diagnostics: DiagnosticsModel
-    @ObservedObject var updater: Updater
-    var menu = false
-    var widgetVisible = true
-    let toggleWidget: () -> Void
-    let diagnose: () -> Void
-    let quit: () -> Void
-    private let mint = Color(red: 0.39, green: 0.95, blue: 0.73)
-    private let coral = Color(red: 1, green: 0.53, blue: 0.56)
-
-    private var accent: Color {
-        guard let sample = monitor.latest else { return .white.opacity(0.55) }
-        return sample.online ? mint : coral
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                HStack {
-                    Label("Сетеметр", systemImage: "waveform.path")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.72))
-                    Spacer()
-                }
-                .frame(height: 22)
-                .overlay {
-                    if !menu { WindowDragArea() }
-                }
-                if !menu {
-                    Button(action: toggleWidget) {
-                        Image(systemName: "xmark").font(.system(size: 10, weight: .semibold))
-                            .frame(width: 24, height: 22)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help("Скрыть виджет")
-                    .accessibilityLabel("Скрыть виджет")
-                }
-            }
-            HStack(spacing: 8) {
-                Image(systemName: symbol(monitor.latest))
-                    .font(.system(size: 17, weight: .semibold)).foregroundStyle(accent)
-                    .accessibilityHidden(true)
-                Text(status(monitor.latest))
-                    .font(.system(size: 21, weight: .semibold))
-                Spacer(minLength: 0)
-            }
-            VStack(alignment: .leading, spacing: 7) {
-                Text("Последние 30 проверок")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.60))
-                HStack(alignment: .bottom, spacing: 3) {
-                    ForEach(0..<max(0, 30 - monitor.samples.count), id: \.self) { _ in
-                        Capsule().fill(.white.opacity(0.15)).frame(height: 4)
-                    }
-                    ForEach(monitor.samples) { sample in
-                        let height: CGFloat = sample.milliseconds.map { milliseconds in
-                            min(24.0, 7.0 + CGFloat(milliseconds) / 18.0)
-                        } ?? 5.0
-                        Capsule().fill(sample.online ? mint : coral).frame(height: height)
-                    }
-                }
-                .frame(height: 24, alignment: .bottom)
-                .accessibilityLabel("История проверок")
-                .accessibilityValue("Успешных \(monitor.samples.filter(\.online).count) из \(monitor.samples.count)")
-            }
-            HStack {
-                Text(monitor.latest.map { $0.date.formatted(date: .omitted, time: .standard) } ?? "—")
-                    .foregroundStyle(.white.opacity(0.62))
-                    .accessibilityLabel("Время последней проверки")
-                Spacer()
-                Text(monitor.latest?.milliseconds.map { "\($0) мс" } ?? "— мс")
-                    .foregroundStyle(accent)
-                    .help("Время ответа HTTPS")
-            }
-            .font(.system(size: 11, weight: .medium, design: .monospaced))
-            Divider().overlay(.white.opacity(0.10))
-            VStack(spacing: 7) {
-                HStack(spacing: 6) {
-                    Label("Скачивание", systemImage: "arrow.down.circle")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.70))
-                    Spacer(minLength: 0)
-                    Text(speedSummary)
-                        .font(.system(size: 14, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(mint)
-                    Button(action: diagnostics.testSpeed) {
-                        Image(systemName: diagnostics.speedBusy ? "arrow.clockwise" : "speedometer")
-                    }
-                    .controlSize(.small)
-                    .disabled(diagnostics.busy || diagnostics.speedBusy)
-                    .help(speedHelp)
-                    .accessibilityLabel("Измерить среднюю скорость")
-                }
-                summary("Внешний IPv4", diagnostics.value("Внешний IPv4"))
-                summary("Внешний IPv6", diagnostics.value("Внешний IPv6"))
-                summary("Локальный IPv4", localIPv4)
-                summary("Маршрут", routeSummary)
-                summary("Шлюз", gatewaySummary)
-                summary("DNS / прокси", dnsSummary)
-                summary("Проверки", diagnostics.httpsSummary)
-            }
-            .help(diagnostics.checked.map { "Проверено в \($0.formatted(date: .omitted, time: .standard))" }
-                  ?? "Проверяем подключение…")
-            if menu {
-                Button(action: updater.performPrimaryAction) {
-                    Label(updateTitle, systemImage: "arrow.triangle.2.circlepath")
-                        .lineLimit(2)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .controlSize(.small)
-                .disabled(updater.isBusy)
-            }
-            HStack {
-                Button(action: diagnose) {
-                    Label("Диагностика", systemImage: "network")
-                }
-                Spacer(minLength: 0)
-                if menu {
-                    Button(widgetVisible ? "Скрыть виджет" : "Показать виджет", action: toggleWidget)
-                    Button("Выход", action: quit).keyboardShortcut("q")
-                }
-            }
-            .controlSize(.small)
-        }
-        .padding(17)
-        .frame(width: 316)
-        .foregroundStyle(.white)
-        .preferredColorScheme(.dark)
-        .background {
-            RoundedRectangle(cornerRadius: 20)
-                .fill(LinearGradient(colors: [Color(red: 0.10, green: 0.16, blue: 0.20),
-                                              Color(red: 0.05, green: 0.08, blue: 0.12)],
-                                     startPoint: .topLeading, endPoint: .bottomTrailing))
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: 20).strokeBorder(accent.opacity(0.27), lineWidth: 1)
-                .allowsHitTesting(false)
-        }
-    }
-    private var updateTitle: String {
-        switch updater.state {
-        case .idle: return "Проверить обновления"
-        case .checking: return "Проверяем обновления…"
-        case .available(let version, _): return "Доступна версия \(version) — Обновить"
-        case .downloading: return "Загружаем обновление…"
-        case .upToDate: return "Установлена последняя версия"
-        case .failed(let message): return "Ошибка обновления: \(message)"
-        }
-    }
-
-    private var speedSummary: String {
-        if let value = diagnostics.formattedSpeed { return "\(value) \(diagnostics.speedUnitTitle)" }
-        if diagnostics.speedBusy { return "Замер…" }
-        return diagnostics.speedFailed ? "Нет замера" : "— \(diagnostics.speedUnitTitle)"
-    }
-
-    private var speedHelp: String {
-        if diagnostics.speedBusy { return "Идёт замер скорости" }
-        if diagnostics.speedFailed { return "Последний замер не завершился. Нажмите, чтобы повторить." }
-        if let date = diagnostics.speedDate {
-            return "Последний замер: \(date.formatted(date: .abbreviated, time: .shortened)). Нажмите, чтобы повторить."
-        }
-        return "Измерить среднюю скорость · 3 загрузки по 5 МБ"
-    }
-
-    private var localIPv4: String? {
-        if let wifi = diagnostics.value("IPv4 Wi‑Fi"), wifi != "—" { return wifi }
-        return diagnostics.value("IPv4 на основном интерфейсе")
-    }
-
-    private var gatewaySummary: String? {
-        guard let address = diagnostics.value("Шлюз Wi‑Fi") ?? diagnostics.value("Шлюз") else { return nil }
-        guard let ping = diagnostics.value("Пинг шлюза"), ping.hasSuffix(" мс") else { return address }
-        return "\(address) · \(ping)"
-    }
-
-    private var dnsSummary: String? {
-        guard let dns = diagnostics.value("DNS-серверы macOS"),
-              let proxy = diagnostics.value("Системный прокси") else { return nil }
-        return "\(dns) · \(proxy == "Выключен" ? "выкл." : proxy)"
-    }
-
-    private var routeSummary: String? {
-        guard let interface = diagnostics.value("Маршрут по умолчанию") else { return nil }
-        guard let vpn = diagnostics.value("VPN macOS"), vpn != "Нет активного профиля" else { return interface }
-        return "\(vpn) · \(interface)"
-    }
-
-    private func summary(_ label: String, _ value: String?) -> some View {
-        HStack {
-            Text(label).foregroundStyle(.white.opacity(0.60))
-            Spacer(minLength: 6)
-            Text(value ?? "—")
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .lineLimit(1)
-                .truncationMode(.middle)
-        }
-        .font(.system(size: 11))
-    }
-
 }
 
 private final class MenuPanel: NSPanel {
@@ -345,12 +140,14 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var item: NSStatusItem!
     private var widget: NSPanel!
     private var observation: Any?
+    private var menuBarObservation: AnyCancellable?
     private var diagnosticsTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.target = self
         item.button?.action = #selector(showMenu)
+        item.button?.imagePosition = .imageLeading
 
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 800, height: 600)
         let content = NSHostingView(rootView: card())
@@ -384,6 +181,12 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         observation = monitor.$samples.sink { [weak self] samples in
             self?.updateMenuBar(samples.last)
         }
+        // Значение берём из замыкания: @Published отдаёт новое значение до записи в свойство.
+        menuBarObservation = Settings.shared.$showPingInMenuBar
+            .dropFirst()
+            .sink { [weak self] show in
+                self?.updateMenuBar(self?.monitor.latest, showPing: show)
+            }
         monitor.start()
         diagnostics.start()
         updater.start()
@@ -405,20 +208,30 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         HistoryStore.shared.flush()
     }
 
-    private func updateMenuBar(_ sample: Sample?) {
+    private func updateMenuBar(_ sample: Sample?, showPing: Bool? = nil) {
         let description = status(sample)
         let image = NSImage(systemSymbolName: symbol(sample), accessibilityDescription: description)
         image?.isTemplate = true
         item.button?.image = image
+        let shouldShowPing = showPing ?? Settings.shared.showPingInMenuBar
+        item.button?.title = shouldShowPing ? menuBarTitle(sample) : ""
         item.button?.toolTip = "Сетеметр · \(description)"
         item.button?.setAccessibilityLabel("Сетеметр, \(description)")
+    }
+
+    /// Короткий пинг рядом с иконкой: «74», а при отсутствии связи «нет».
+    private func menuBarTitle(_ sample: Sample?) -> String {
+        guard let sample else { return "" }
+        guard let milliseconds = sample.milliseconds else { return "нет" }
+        return String(milliseconds)
     }
 
     private func card(menu: Bool = false, widgetVisible: Bool = true) -> Card {
         Card(monitor: monitor, diagnostics: diagnostics, updater: updater, menu: menu, widgetVisible: widgetVisible,
              toggleWidget: { [weak self] in self?.toggleWidget() },
              diagnose: { [weak self] in self?.showDiagnostics() },
-             quit: { NSApp.terminate(nil) })
+             quit: { NSApp.terminate(nil) },
+             close: { [weak self] in self?.closeMenu() })
     }
 
     @objc private func showMenu() {

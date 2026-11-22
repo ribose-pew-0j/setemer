@@ -41,6 +41,7 @@ final class Settings: ObservableObject {
         static let slowPing = "settings.slowPingThresholdMs"
         static let speedUnit = "settings.speedUnit"
         static let speedWarning = "settings.speedWarningMbps"
+        static let showPingInMenuBar = "settings.showPingInMenuBar"
     }
 
     private let defaults: UserDefaults
@@ -78,6 +79,11 @@ final class Settings: ObservableObject {
         didSet { defaults.set(speedWarningMbps, forKey: Key.speedWarning) }
     }
 
+    /// Показывать текущий пинг рядом с иконкой в строке меню.
+    @Published var showPingInMenuBar: Bool {
+        didSet { defaults.set(showPingInMenuBar, forKey: Key.showPingInMenuBar) }
+    }
+
     private init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         let interval = defaults.integer(forKey: Key.checkInterval)
@@ -86,6 +92,7 @@ final class Settings: ObservableObject {
         slowPingThresholdMs = defaults.object(forKey: Key.slowPing) as? Int ?? 200
         speedUnit = SpeedUnit(rawValue: defaults.string(forKey: Key.speedUnit) ?? "") ?? .megabits
         speedWarningMbps = defaults.object(forKey: Key.speedWarning) as? Int ?? 10
+        showPingInMenuBar = defaults.object(forKey: Key.showPingInMenuBar) as? Bool ?? true
         launchAtLogin = SMAppService.mainApp.status == .enabled
     }
 
