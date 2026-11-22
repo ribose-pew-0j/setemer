@@ -1,28 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// Статус строки: цвет и значок, который выводится по значению.
-struct RowStatus {
-    let tone: Tone
-    let symbol: String
-}
-
-/// Классификация значения диагностики по тексту (проверки, пинги, ошибки).
-func rowStatus(_ row: DiagnosticRow) -> RowStatus {
-    let value = row.value
-    if value == "—" || value.isEmpty || value == "Выключен" || value == "Нет активного профиля" {
-        return RowStatus(tone: .neutral, symbol: "minus.circle")
-    }
-    let badPrefixes = ["Нет", "Ошибка", "Таймаут", "HTTP", "Некорректный", "Отсутствует", "Ответ не HTTP", "Не "]
-    if badPrefixes.contains(where: { value.hasPrefix($0) }) {
-        return RowStatus(tone: .bad, symbol: "xmark.circle.fill")
-    }
-    if value.hasPrefix("OK") || value.hasPrefix("0%") || value.hasSuffix(" мс") {
-        return RowStatus(tone: .good, symbol: "checkmark.circle.fill")
-    }
-    return RowStatus(tone: .neutral, symbol: "minus.circle")
-}
-
 /// Окно «Диагностика»: в стиле Системных настроек — сгруппированные inset-списки на системном фоне,
 /// сворачиваемые секции, цветные значки только для статуса; нижняя панель с «Обновить» и «Скопировать отчёт».
 @MainActor
@@ -36,8 +14,8 @@ struct DiagnosticsView: View {
 
     let sections: [(title: String, symbol: String)] = [
         (title: "Внешний адрес", symbol: "globe"),
-        (title: "Локальная сеть и маршрутизация", symbol: "wifi"),
-        (title: "Доступность", symbol: "checkmark.shield")
+        (title: "Параметры сети", symbol: "wifi"),
+        (title: "Проверки подключения", symbol: "checkmark.shield")
     ]
 
     init(model: DiagnosticsModel) {
@@ -162,7 +140,7 @@ struct DiagnosticsView: View {
         let info = index < sections.count ? sections[index] : (title: "Раздел", symbol: "list.bullet")
         let isCollapsed = collapsed.contains(index)
         let rows = model.groups[index]
-        let problems = rows.filter { rowStatus($0).tone == .bad }.count
+        let problems = rows.filter { $0.needsAttention }.count
         return VStack(alignment: .leading, spacing: 0) {
             Button {
                 animateUI {
@@ -182,9 +160,9 @@ struct DiagnosticsView: View {
                         .font(Typo.body)
                     Spacer(minLength: 8)
                     if problems > 0 {
-                        Text("проблем: \(problems)")
+                        Label("Требует внимания · \(problems)", systemImage: "exclamationmark.circle")
                             .font(Typo.caption)
-                            .foregroundStyle(theme.coral)
+                            .foregroundStyle(theme.amber)
                     }
                     Image(systemName: "chevron.right")
                         .font(.system(size: 10, weight: .semibold))
@@ -204,7 +182,6 @@ struct DiagnosticsView: View {
                         if rowIndex > 0 {
                             Divider()
                                 .opacity(0.6)
-                                .padding(.leading, 26)
                         }
                         rowView(rows[rowIndex], theme: theme)
                     }
@@ -218,17 +195,16 @@ struct DiagnosticsView: View {
     }
 
     private func rowView(_ row: DiagnosticRow, theme: Theme) -> some View {
-        let state = rowStatus(row)
-        return HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: state.symbol)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(theme.color(state.tone))
-                .frame(width: 14)
-                .accessibilityHidden(true)
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(row.name)
                 .font(Typo.body)
             Spacer(minLength: 12)
-            Text(row.value)
+            if row.needsAttention {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .foregroundStyle(theme.amber)
+                    .accessibilityLabel("Требует внимания")
+            }
+            Text(row.value.replacingOccurrences(of: "^OK · ", with: "Ответ получен · ", options: .regularExpression))
                 .font(Typo.body)
                 .monospacedDigit()
                 .foregroundStyle(.secondary)

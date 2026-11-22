@@ -6,7 +6,13 @@ import SwiftUI
 struct DiagnosticRow: Identifiable, Sendable {
     let name: String
     let value: String
+    var needsAttention = false
     var id: String { name }
+
+    static func check(_ name: String, _ result: String) -> Self {
+        let passed = result.hasPrefix("OK · ")
+        return Self(name: name, value: result, needsAttention: !passed)
+    }
 }
 
 /// Страна и провайдер внешнего адреса (ifconfig.co).
@@ -79,17 +85,17 @@ private enum NetworkDiagnostics {
         let jitterText = probe.jitterMs.map { "\(fraction($0)) мс" } ?? "—"
         let lossText = "\(Int(probe.lossPercent))% · ответили \(probe.received) из 10"
         let groups: [[DiagnosticRow]] = [
-            [.init(name: "Внешний IPv4", value: ipv4 ?? "Нет ответа"),
-             .init(name: "Внешний IPv6", value: ipv6),
-             .init(name: "Страна · Провайдер", value: ipInfo?.summary ?? "—")],
-            [DiagnosticRow(name: "Тип сети", value: networkType ?? "—")] + localRows + wifiRows(wifiStatus),
-            [.init(name: "Системный DNS · apple.com", value: dnsResult),
-             .init(name: "Cloudflare · HTTPS 204", value: cloudflareResult),
-             .init(name: "Google · HTTPS 204", value: googleResult),
-             .init(name: "Apple · HTTPS 200", value: appleResult),
-             .init(name: "1.1.1.1 · HTTPS по IP", value: numericResult),
+            [.init(name: "Внешний IPv4", value: ipv4 ?? "Не удалось определить"),
+             .init(name: "Внешний IPv6", value: ipv6 == "Нет ответа" ? "Не удалось определить" : ipv6),
+             .init(name: "Страна · Провайдер", value: ipInfo?.summary ?? "Нет данных")],
+            [DiagnosticRow(name: "Тип сети", value: networkType ?? "—", needsAttention: networkType == "Нет сети")] + localRows + wifiRows(wifiStatus),
+            [.check("Системный DNS · apple.com", dnsResult),
+             .check("Cloudflare · HTTPS 204", cloudflareResult),
+             .check("Google · HTTPS 204", googleResult),
+             .check("Apple · HTTPS 200", appleResult),
+             .check("1.1.1.1 · HTTPS по IP", numericResult),
              .init(name: "Джиттер · 10 проверок", value: jitterText),
-             .init(name: "Потери пакетов", value: lossText)]
+             .init(name: "Потери пакетов", value: lossText, needsAttention: probe.lossPercent > 0)]
         ]
         return Snapshot(groups: groups,
                         publicIPv4: ipv4,
@@ -370,11 +376,11 @@ private enum NetworkDiagnostics {
         }
 
         return [
-            .init(name: "Маршрут по умолчанию", value: routeInterface ?? "Отсутствует"),
+            .init(name: "Маршрут по умолчанию", value: routeInterface ?? "Не найден", needsAttention: routeInterface == nil),
             .init(name: "IPv4 на основном интерфейсе", value: routeIP.isEmpty ? "—" : routeIP),
             .init(name: "IPv4 Wi‑Fi", value: wifiIP.isEmpty ? "—" : "\(wifiIP) · \(wifi ?? "")"),
             .init(name: wifiGateway == nil ? "Шлюз" : "Шлюз Wi‑Fi", value: gateway ?? "—"),
-            .init(name: "Пинг шлюза", value: ping),
+            .init(name: "Пинг шлюза", value: ping, needsAttention: ping == "Нет ICMP-ответа"),
             .init(name: "DNS-серверы macOS", value: dns.isEmpty ? "—" : dns.joined(separator: ", ")),
             .init(name: "VPN macOS", value: vpn.isEmpty ? "Нет активного профиля" : vpn.joined(separator: ", ")),
             .init(name: "Системный прокси", value: proxies.isEmpty ? "—" : enabled.isEmpty ? "Выключен" : enabled.joined(separator: ", "))
